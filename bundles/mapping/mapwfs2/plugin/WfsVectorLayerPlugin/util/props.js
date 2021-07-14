@@ -1,5 +1,4 @@
-export const WFS_ID_KEY = '_oid';
-export const WFS_FTR_ID_KEY = '__fid';
+import { WFS_ID_KEY, WFS_FTR_ID_KEY } from '../../../../mapmodule/domain/constants';
 
 const removeProps = new Set(['layer', 'geometry', 'bbox']);
 const removePropsWithId = new Set([WFS_ID_KEY, WFS_FTR_ID_KEY, ...removeProps]);

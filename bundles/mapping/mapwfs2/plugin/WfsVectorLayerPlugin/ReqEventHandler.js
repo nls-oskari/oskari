@@ -1,4 +1,5 @@
-import { processFeatureProperties, WFS_ID_KEY, WFS_FTR_ID_KEY } from './util/props';
+import { processFeatureProperties } from './util/props';
+import { WFS_ID_KEY, WFS_FTR_ID_KEY } from '../../../mapmodule/domain/constants';
 import { filterByAttribute, getFilterAlternativesAsArray } from './util/filter';
 
 export class ReqEventHandler {

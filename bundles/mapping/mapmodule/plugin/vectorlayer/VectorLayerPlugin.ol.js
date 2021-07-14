@@ -1,7 +1,6 @@
 import olSourceVector from 'ol/source/Vector';
 import olLayerVector from 'ol/layer/Vector';
 import { unByKey } from 'ol/Observable.js';
-import olOverlay from 'ol/Overlay';
 import { fromExtent } from 'ol/geom/Polygon';
 import olFormatWKT from 'ol/format/WKT';
 import olFormatGeoJSON from 'ol/format/GeoJSON';
@@ -10,7 +9,7 @@ import { BufferOp } from 'jsts/org/locationtech/jts/operation/buffer';
 import * as olGeom from 'ol/geom';
 import LinearRing from 'ol/geom/LinearRing';
 import GeometryCollection from 'ol/geom/GeometryCollection';
-import { LAYER_ID, LAYER_HOVER, LAYER_TYPE, FTR_PROPERTY_ID, SERVICE_LAYER_REQUEST } from '../../domain/constants';
+import { LAYER_ID, LAYER_TYPE, FTR_PROPERTY_ID, SERVICE_LAYER_REQUEST } from '../../domain/constants';
 import { filterOptionalStyle } from '../../oskariStyle/filter';
 import { getZoomLevelHelper, getScalesFromOptions } from '../../util/scale';
 
@@ -135,18 +134,6 @@ Oskari.clazz.define(
             }
         },
 
-        _createHoverOverlay: function () {
-            // FIXME: There is code in VectorFeatureService.ol.js that creates a tooltip overlay as well
-            // Changing this one seems doesn't seem to have any effect so this could be removed/cleaned out!!
-            // Not cleaning out now with release coming up but whoever sees this comment can clean this out
-            var overlayDiv = document.createElement('div');
-            overlayDiv.className = 'feature-hover-overlay';
-            this._hoverOverlay = new olOverlay({
-                element: overlayDiv
-            });
-            this._map.addOverlay(this._hoverOverlay);
-        },
-
         /**
          * @method _createEventHandlers
          * Create event handlers
@@ -248,7 +235,12 @@ Oskari.clazz.define(
             if (typeof layer !== 'object') {
                 layer = this._getOlLayer(layer);
             }
-            const hoverOptions = layer.get(LAYER_HOVER);
+            const layerId = layer.get(LAYER_ID);
+            const oskariLayer = this._findOskariLayer(layerId);
+            if (!oskariLayer) {
+                return;
+            }
+            const hoverOptions = oskariLayer.getHoverOptions();
             if (!hoverOptions || !hoverOptions.featureStyle) {
                 return;
             }
@@ -258,13 +250,13 @@ Oskari.clazz.define(
                     return;
                 }
             }
-            const ftrStyles = this.getCachedStyles(layer.get(LAYER_ID), this.getFeatureId(feature));
+            const ftrStyles = this.getCachedStyles(layerId, this.getFeatureId(feature));
             if (!ftrStyles || ftrStyles.hoverActive) {
                 return;
             }
             const hoverStyleDef = hoverOptions.featureStyle;
             if (!ftrStyles.olHover) {
-                let hoverStyle = hoverStyleDef.inherit ? jQuery.extend(true, {}, ftrStyles.oskari || {}, hoverStyleDef) : hoverStyleDef;
+                const hoverStyle = hoverStyleDef.inherit ? jQuery.extend(true, {}, ftrStyles.oskari || {}, hoverStyleDef) : hoverStyleDef;
                 ftrStyles.olHover = this.getMapModule().getStyle(hoverStyle);
                 ftrStyles.olHover.setZIndex(ftrStyles.ol.getZIndex());
                 this._setFeatureLabel(feature, hoverStyle, ftrStyles.olHover);
@@ -455,7 +447,6 @@ Oskari.clazz.define(
                 const silent = true;
                 olLayer.set(LAYER_ID, layer.getId(), silent);
                 olLayer.set(LAYER_TYPE, layer.getLayerType(), silent);
-                olLayer.set(LAYER_HOVER, layer.getHoverOptions(), silent);
                 me._olLayers[layer.getId()] = olLayer;
 
                 const zoomLevelHelper = getZoomLevelHelper(this.getMapModule().getScaleArray());
@@ -535,14 +526,7 @@ Oskari.clazz.define(
                     layer.setOpacity(options.opacity);
                 }
                 layer.setVisible(true);
-
-                if (options.hover && options.hover.filter) {
-                    if (!Array.isArray(options.hover.filter)) {
-                        options.hover.filter = [options.hover.filter];
-                    }
-                }
-                layer.setHoverOptions(options.hover);
-
+                this._setHoverOptions(layer, options);
                 // scale limits
                 const mapModule = this.getMapModule();
                 const scales = getScalesFromOptions(
@@ -636,10 +620,7 @@ Oskari.clazz.define(
                 // Apply changes to ol layer
                 this._getOlLayer(layer);
             }
-            if (options.hover) {
-                layer.setHoverOptions(options.hover);
-                this._getOlLayer(layer).set(LAYER_HOVER, layer.getHoverOptions());
-            }
+            this._setHoverOptions(layer, options);
             if (options.layerDescription) {
                 layer.setDescription(options.layerDescription);
                 layerUpdate = true;
@@ -654,6 +635,23 @@ Oskari.clazz.define(
             }
             return layer;
         },
+        _setHoverOptions: function (layer, options) {
+            const { hover } = options;
+            if (hover) {
+                layer.setHoverOptions(hover);
+                if (hover.filter) {
+                    if (!Array.isArray(hover.filter)) {
+                        hover.filter = [hover.filter];
+                    }
+                }
+                // tooltip overlay is handled by VectorFeatureService
+                if (Array.isArray(hover.content)) {
+                    const vectorFeatureService = this.getSandbox().getService('Oskari.mapframework.service.VectorFeatureService');
+                    vectorFeatureService.setVectorLayerHoverTooltip(layer);
+                }
+            }
+        },
+
         /**
          * @method _containsLayerOptions
          * @private
@@ -1150,11 +1148,6 @@ Oskari.clazz.define(
             if (update && cached.hoverActive) {
                 delete cached.hoverActive;
                 me._applyHoverStyle(me._hoverState.feature, me._hoverState.layer);
-                const layer = this.getLayerById(layerId);
-                const hoverOptions = layer.get(LAYER_HOVER);
-                const contentOptions = hoverOptions ? hoverOptions.content : null;
-                const vectorFeatureService = this.getSandbox().getService('Oskari.mapframework.service.VectorFeatureService');
-                vectorFeatureService.updateTooltipContent(contentOptions, feature);
             } else {
                 me._animateFillColorChange(feature, olStyle, options.animationDuration);
             }

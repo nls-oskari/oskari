@@ -7,7 +7,7 @@ import { createDefaultStyle } from 'ol/style/Style';
 import { VectorTileModelBuilder } from './VectorTileModelBuilder';
 import { styleGenerator } from './styleGenerator';
 import mapboxStyleFunction from 'ol-mapbox-style/dist/stylefunction';
-import { LAYER_ID, LAYER_HOVER, LAYER_TYPE, FTR_PROPERTY_ID } from '../../domain/constants';
+import { LAYER_ID, LAYER_TYPE } from '../../domain/constants';
 import { getZoomLevelHelper } from '../../util/scale';
 
 const AbstractMapLayerPlugin = Oskari.clazz.get('Oskari.mapping.mapmodule.AbstractMapLayerPlugin');
@@ -23,11 +23,6 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
         this.__name = 'VectorTileLayerPlugin';
         this._clazz = 'Oskari.mapframework.mapmodule.VectorTileLayerPlugin';
         this.layertype = 'vectortile';
-        this.hoverState = {
-            layer: null,
-            feature: null,
-            property: FTR_PROPERTY_ID
-        };
     }
 
     /**
@@ -62,6 +57,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
     _getLayerModelClass () {
         return 'Oskari.mapframework.mapmodule.VectorTileLayer';
     }
+
     /**
      * @private @method _getModelBuilder
      * Returns object to be used as mapLayerService layer model builder
@@ -69,6 +65,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
     _getModelBuilder () {
         return new VectorTileModelBuilder();
     }
+
     /**
      * @private @method _createPluginEventHandlers
      * Called by superclass to create event handlers
@@ -81,6 +78,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
             }
         };
     }
+
     /**
      * @private @method _updateLayerStyle
      * @param {Oskari.mapframework.mapmodule.VectorTileLayer} oskariLayer
@@ -92,6 +90,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
             olLayers[0].setStyle(this._getLayerCurrentStyleFunction(oskariLayer));
         }
     }
+
     /**
      * @private @method _getLayerCurrentStyleFunction
      * Returns OL style corresponding to layer currently selected style
@@ -106,10 +105,10 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
             return mapboxStyleFunction(olLayers[0], externalStyleDef, sourceLayerIds);
         }
         const styleDef = layer.getCurrentStyleDef();
-        const hoverOptions = layer.getHoverOptions();
         const factory = this.mapModule.getStyle.bind(this.mapModule);
-        return styleDef ? styleGenerator(factory, styleDef, hoverOptions, this.hoverState) : this._createDefaultStyle();
+        return styleDef ? styleGenerator(factory, styleDef) : this._createDefaultStyle();
     }
+
     /**
      * @private @method _createDefaultStyle
      * Creates OL style or style function for default style
@@ -118,6 +117,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
     _createDefaultStyle () {
         return createDefaultStyle;
     }
+
     /**
      * Checks if the layer can be handled by this plugin
      * @method  isLayerSupported
@@ -130,6 +130,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
         }
         return layer.isLayerOfType(this.layertype);
     }
+
     /**
      * @method getAttributions
      * @param  {Oskari.mapframework.domain.AbstractLayer} layer
@@ -154,6 +155,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
             return link ? `<a href="${link}">${label}</a>` : label;
         });
     }
+
     getUrlParams (layer) {
         if (!layer.getParams()) {
             return null;
@@ -162,6 +164,7 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
         return Object.keys(params)
             .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k])).join('&');
     }
+
     /**
      * @method addMapLayerToMap
      * @private
@@ -193,7 +196,6 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
         // options is used to store tile grid and all sorts of other flags so only get the
         //  declutter option here instead of spreading the object to layer directly
         const { declutter } = layer.getOptions() || {};
-        // Properties id, type and hover are being used in VectorFeatureService.
         const vectorTileLayer = new olLayerVectorTile({
             opacity: layer.getOpacity() / 100,
             visible: layer.isInScale(this.getMapModule().getMapScale()) && layer.isVisible(),
@@ -201,76 +203,30 @@ class VectorTileLayerPlugin extends AbstractMapLayerPlugin {
             source: this.createSource(layer, sourceOpts),
             declutter
         });
-        // Set oskari properties for vector feature service functionalities.
-        const silent = true;
-        vectorTileLayer.set(LAYER_ID, layer.getId(), silent);
-        vectorTileLayer.set(LAYER_TYPE, layer.getLayerType(), silent);
-        vectorTileLayer.set(LAYER_HOVER, layer.getHoverOptions(), silent);
 
         const zoomLevelHelper = getZoomLevelHelper(this.getMapModule().getScaleArray());
         // Set min max zoom levels that layer should be visible in
         zoomLevelHelper.setOLZoomLimits(vectorTileLayer, layer.getMinScale(), layer.getMaxScale());
 
-        this.mapModule.addLayer(vectorTileLayer, !keepLayerOnTop);
-        this.setOLMapLayers(layer.getId(), vectorTileLayer);
+        const vectorFeatureService = this.getSandbox().getService('Oskari.mapframework.service.VectorFeatureService');
+        const hoverLayer = vectorFeatureService.createHoverLayer(layer, vectorTileLayer.getSource());
+        const olLayers = [vectorTileLayer, hoverLayer];
+        olLayers.forEach(olLayer => {
+            // Properties id and type are being used in VectorFeatureService.
+            // Set oskari properties for vector feature service functionalities.
+            const silent = true;
+            olLayer.set(LAYER_ID, layer.getId(), silent);
+            olLayer.set(LAYER_TYPE, layer.getLayerType(), silent);
+            this.mapModule.addLayer(olLayer, !keepLayerOnTop);
+        });
         vectorTileLayer.setStyle(this._getLayerCurrentStyleFunction(layer));
+        this.setOLMapLayers(layer.getId(), olLayers);
     }
+
     createSource (layer, options) {
         return new olSourceVectorTile(options);
     }
-    /**
-     * @method onMapHover VectorFeatureService handler impl method
-     * Handles feature highlighting on map hover.
-     *
-     * @param { Oskari.mapframework.event.common.MouseHoverEvent } event
-     * @param { olRenderFeature } feature
-     * @param { olVectorTileLayer } layer
-     */
-    onMapHover (event, feature, layer) {
-        const { feature: hoverFeature, layer: hoverLayer, property } = this.hoverState;
-        if (feature === hoverFeature) {
-            return;
-        }
-        if (feature && hoverFeature && feature.get(property) === hoverFeature.get(property)) {
-            return;
-        }
-        this.hoverState.feature = feature;
-        this.hoverState.layer = layer;
-        if (hoverLayer) {
-            const style = (hoverLayer.get(LAYER_HOVER) || {}).featureStyle;
-            if (style) {
-                hoverLayer.changed();
-            }
-        }
-        if (layer && layer !== hoverLayer) {
-            const style = (layer.get(LAYER_HOVER) || {}).featureStyle;
-            if (style) {
-                layer.changed();
-            }
-        }
-    }
 
-    /**
-     * @method onLayerRequest VectorFeatureService handler impl method
-     * Handles VectorLayerRequest to update hover tooltip and feature style.
-     * Other request options are not currently supported.
-     *
-     * @param { Oskari.mapframework.bundle.mapmodule.request.VectorLayerRequest } request
-     * @param { Oskari.mapframework.domain.AbstractLayer|VectorTileLayer } layer
-     */
-    onLayerRequest (request, layer) {
-        const options = request.getOptions();
-        if (options.hover) {
-            layer.setHoverOptions(options.hover);
-            const olLayers = this.getOLMapLayers(layer.getId());
-            if (olLayers) {
-                olLayers.forEach(lyr => {
-                    lyr.set(LAYER_HOVER, layer.getHoverOptions());
-                    lyr.setStyle(this._getLayerCurrentStyleFunction(layer));
-                });
-            }
-        }
-    }
     /**
      * Called when layer details are updated (for example by the admin functionality)
      * @param {Oskari.mapframework.domain.AbstractLayer} layer new layer details

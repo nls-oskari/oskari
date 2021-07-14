@@ -7,7 +7,7 @@ import GeoJSONReader from 'jsts/org/locationtech/jts/io/GeoJSONReader';
 import OL3Parser from 'jsts/org/locationtech/jts/io/OL3Parser';
 import RelateOp from 'jsts/org/locationtech/jts/operation/relate/RelateOp';
 
-import { WFS_ID_KEY } from '../../util/props';
+import { WFS_ID_KEY } from '../../../../../mapmodule/domain/constants';
 
 const reader = new GeoJSONReader();
 const olParser = new OL3Parser();

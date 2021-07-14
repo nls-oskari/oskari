@@ -12,7 +12,7 @@ Oskari.clazz.define('Oskari.mapframework.domain.VectorLayer',
 
     function () { /* style definition for this layer */
         this._sldspec = null;
-
+        this._hoverOptions = null;
         /* Layer Type */
         this._layerType = 'VECTOR';
     }, {
@@ -40,14 +40,14 @@ Oskari.clazz.define('Oskari.mapframework.domain.VectorLayer',
          * @param {Object} options
          */
         setHoverOptions: function (options) {
-            this.hoverOptions = options;
+            this._hoverOptions = options;
         },
         /**
          * @method getHoverOptions
          * @return {Object} options
          */
         getHoverOptions: function () {
-            return this.hoverOptions;
+            return this._hoverOptions;
         }
     }, {
         'extend': ['Oskari.mapframework.domain.AbstractLayer']
